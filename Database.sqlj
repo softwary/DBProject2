@@ -898,22 +898,18 @@ return new Date(calendar.getTime().getTime());
         }
         catch
         {
-            
+            rollback();
+            if (e.getSQLState().equals(NO_ROW_SQL_STATE))
+                throw new ErrorMessage("No such borrower");
+            else
+                throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
         }
 
-
-
-
-
-
-
-    // STUB
-    if (borrowerID.equals("BAD")) throw new ErrorMessage("Error message test getBorrowerInformation");
-    values[1] = lastName;
-    values[2] = firstName;
-    values[3] = originalPhones;
-    values[4] = categoryName;
-    return values;
+        values[1] = lastName;
+        values[2] = firstName;
+        values[3] = originalPhones;
+        values[4] = categoryName;
+        return values;
     }
 
     /** Update stored information about a borrower
