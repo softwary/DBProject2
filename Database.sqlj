@@ -108,7 +108,8 @@ public class Database
      */
     public String getBorrowerName(String borrowerID) throws ErrorMessage
     {
-// STUB
+        System.out.println("addBorrower called, in TRY block");
+        // STUB
 if (borrowerID.equals("BAD")) throw new ErrorMessage("Error message test getBorrowerName");
 return "??? name ???";
     }
@@ -810,40 +811,40 @@ return new Date(calendar.getTime().getTime());
                             List phones,
                             String category) throws ErrorMessage
     {
-      try
-      {
-        #sql { insert into borrower
-                      values (:borrowerID, :lastName, :firstName, :category)
-             };
+        try
+        {
+            #sql { insert into borrower 
+                            values (:borrowerID, :lastName, :firstName, :category)
+                    };
 
-         Iterator phoneIterator = phones.iterator();
-         while (phoneIterator.hasNext())
-         {
-             String phone = (String) phoneIterator.next();
+            Iterator phoneIterator = phones.iterator();
+            while (phoneIterator.hasNext())
+            {
+                String phone = (String) phoneIterator.next();
 
-             #sql { insert into borrower_Phone
-                       values (:borrowerID, :phone)
-                  };
-         }
+                #sql { insert into borrower_Phone
+                        values (:borrowerID, :phone)
+                    };
+            }
+            System.out.println("addBorrower called, in TRY block");
+            #sql { commit };
         }
-        #sql {commit};
-
-      }
-      catch(SQLException e)
-      {
-          rollback();
-          if (e.getErrorCode() == DUPLICATE_KEY_SQL_ERROR)
-          {
-              if (e.getMessage().indexOf(BORROWER_TABLE_NAME) >= 0)
-                  throw new ErrorMessage("Duplicate borrower");
-              else
-                  throw new ErrorMessage("Duplicate phone number for this borrower");
-          }
-          else if (e.getMessage().indexOf(BORROWER_CATEGORY_FOREIGN_CONSTRAINT) >= 0)
-              throw new ErrorMessage("Category of borrower was not found");
-          else
-              throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
-      }
+        catch(SQLException e)
+        {
+            System.out.println("addBorrower called, in catch block");
+            rollback();
+            if (e.getErrorCode() == DUPLICATE_KEY_SQL_ERROR)
+            {
+                if (e.getMessage().indexOf(BORROWER_TABLE_NAME) >= 0)
+                    throw new ErrorMessage("Duplicate borrower");
+                else
+                    throw new ErrorMessage("Duplicate phone number for this borrower");
+            }
+            else if (e.getMessage().indexOf(BORROWER_CATEGORY_FOREIGN_CONSTRAINT) >= 0)
+                throw new ErrorMessage("Category of borrower was not found");
+            else
+                throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
+        }
 
       Object [] newInformation = new Object[5];
       newInformation[0] = borrowerID;
@@ -896,7 +897,7 @@ return new Date(calendar.getTime().getTime());
             }
             cursor.close();
         }
-        catch
+        catch(SQLException e)
         {
             rollback();
             if (e.getSQLState().equals(NO_ROW_SQL_STATE))
@@ -991,9 +992,7 @@ return new Date(calendar.getTime().getTime());
         else 
             throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
     }
-
-        // STUB
-        if (borrowerID.equals("BAD2")) throw new ErrorMessage("Error message test updateBorrower");
+    
         Object [] information = new Object[6];
         information[0] = borrowerID;
         information[1] = newLastName;
