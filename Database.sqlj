@@ -108,10 +108,31 @@ public class Database
      */
     public String getBorrowerName(String borrowerID) throws ErrorMessage
     {
-        System.out.println("addBorrower called, in TRY block");
+        System.out.println("getBorrowerName() called");
+        try 
+        {
+            System.out.println("getBorrowerName called, in TRY block");
+            String lastName = null, firstName = null;
+            #sql { select first_name, last_name 
+                    into :firstName, :lastName
+                    from borrower };
+            
+        } 
+        catch(SQLException e)
+        {
+            if (e.getSQLState().equals(NO_ROW_SQL_STATE))
+                throw new ErrorMessage("No such borrower");
+            else
+                throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
+        } 
+        finally 
+        {
+            rollback();
+        }
+
+
         // STUB
-if (borrowerID.equals("BAD")) throw new ErrorMessage("Error message test getBorrowerName");
-return "??? name ???";
+        return "??? name ???";
     }
 
     /** Check out a book.
@@ -811,12 +832,13 @@ return new Date(calendar.getTime().getTime());
                             List phones,
                             String category) throws ErrorMessage
     {
+        System.out.println("addBorrower called before TRY");
         try
         {
             #sql { insert into borrower 
                             values (:borrowerID, :lastName, :firstName, :category)
                     };
-
+            /*
             Iterator phoneIterator = phones.iterator();
             while (phoneIterator.hasNext())
             {
@@ -826,6 +848,7 @@ return new Date(calendar.getTime().getTime());
                         values (:borrowerID, :phone)
                     };
             }
+            */
             System.out.println("addBorrower called, in TRY block");
             #sql { commit };
         }
@@ -854,7 +877,7 @@ return new Date(calendar.getTime().getTime());
       newInformation[4] = category;
 
 
-      System.out.println("addBorrower(" + toString(newInformation) + ") called");
+      //System.out.println("addBorrower(" + toString(newInformation) + ") called");
     }
 
     /** Get information on an existing borrower about to be edited or deleted
@@ -868,13 +891,17 @@ return new Date(calendar.getTime().getTime());
      *  @exception an ErrorMessage is thrown with an appropriate message if
      *          the borrower does not exist
      */
+    
+    #sql iterator PhoneCursor(String);
+
     public Object [] getBorrowerInformation(String borrowerID) throws ErrorMessage
     {
-        #sql iterator PhoneCursor(String);
         List originalPhones = new ArrayList();
         Object [] values = new Object[5];
         values[0] = borrowerID;
-
+        String lastName = null; 
+        String firstName = null; 
+        String categoryName = null;
         try
         {
             PhoneCursor cursor;
@@ -942,47 +969,32 @@ return new Date(calendar.getTime().getTime());
                         category_name = :newCategory
                         where borrower_id = :borrowerID};
 
+        Iterator newPhonesIterator = newPhones.iterator();
+        Iterator originalPhonesIterator = originalPhones.iterator();
 
-        if (newPhones.length() >= originalPhones.length()) { // There are more newPhones than originalPhones
-            for (let i = 0; i < newPhones.length(); i++) {
-                if (i <= originalPhones.length()) {
-                    String newPhone = (String) newPhones[i];
-
-                    #sql { update borrower_Phone
-                            set phone = :newPhone
-                            where borrower_id = :borrowerID
-                        };
-                } 
-                else {
-                    String newPhone = (String) newPhones[i];
-
-                    #sql { insert into borrower_Phone
-                                values (:borrowerID, :newPhone)
-                            };
-                }
-            }
-        }  
-        else // There are more originalPhones than newPhones
+        while (originalPhonesIterator.hasNext())
         {
-            for (let i = 0; i < originalPhones.length(); i++) {
-                if (i <= newPhones.length()) {
-                    String newPhone = (String) newPhones[i];
+            // Remove any phones not added again
+            String original = (String) originalPhonesIterator.next();
+            if (! newPhones.contains(original))
 
-                    #sql { update borrower_Phone
-                            set phone = :newPhone
-                            where borrower_id = :borrowerID
-                        };
-                } 
-                else {
-                    String newPhone = (String) newPhones[i];
-
-                    #sql { delete from borrower_Phone
-                                where borrowerID = :borrowerID
-                            };
-                }
-            }
+                #sql { delete from borrower_Phone  
+                            where borrower_ID = :borrowerID and
+                            phone = :original
+                    };
         }
-        #sql { commit };
+
+        while (newPhonesIterator.hasNext())
+        {
+            // Add any phones not there originally
+            String newPhone = (String) newPhonesIterator.next();
+            if (! originalPhones.contains(newPhone))
+
+                #sql { insert into borrower_phone 
+                                values (:borrowerID, :newPhone)
+                    };
+        }
+            #sql { commit };
     }
     catch(SQLException e)
     {
@@ -1028,7 +1040,6 @@ return new Date(calendar.getTime().getTime());
           else
               throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
       }
-    System.out.println("deleteBorrower(" + toString(information) + ") called");
     }
 
     /* ************************************************************************
@@ -1486,6 +1497,7 @@ stream.println("Overdue Books report");
         "CHECKED_OUT_BORROWER";
 
     private static final String BOOK_AUTHOR_TABLE_NAME = "BOOK_AUTHOR";
+    private static final String BORROWER_TABLE_NAME = "BORROWER";
 
     private static final String DRIVER_NAME = "com.ibm.db2.jcc.DB2Driver";
     private static final String DATABASE_URL =
