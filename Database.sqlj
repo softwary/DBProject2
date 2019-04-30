@@ -106,18 +106,17 @@ public class Database
      *  @exception an ErrorMessage is thrown with an appropriate message if
      *          the borrower does not exist
      */
-    public String getBorrowerName(String borrowerID) throws ErrorMessage
+ public String getBorrowerName(String borrowerID) throws ErrorMessage
     {
         String borrowerName = null;
-
-        System.out.println("getBorrowerName() called");
         try
         {
             System.out.println("getBorrowerName called, in TRY block");
             String lastName = null, firstName = null;
             #sql { select first_name, last_name
                     into :firstName, :lastName
-                    from borrower };
+                    from borrower
+                    where borrower_id = :borrowerID };
 
             borrowerName = firstName + lastName;
 
@@ -136,6 +135,7 @@ public class Database
             return borrowerName;
     }
 
+
     /** Check out a book.
      *
      *  @param borrowerID the ID of the borrower to whom book is to be checked
@@ -151,14 +151,39 @@ public class Database
                              String callNumber,
                              short copyNumber) throws ErrorMessage
     {
-// STUB
-if (callNumber.equals("BAD")) throw new ErrorMessage("Error message test checkOutBook");
-System.out.println("Check out " + callNumber + " " +
-copyNumber + " to " + borrowerID);
-Calendar calendar = Calendar.getInstance();
-calendar.add(Calendar.DATE, deltaDate);
-calendar.add(Calendar.DATE, 10);
-return new Date(calendar.getTime().getTime());
+        Date dueDate = null;
+        try 
+        {
+            #sql {
+                select current date + :deltaDate days + checkout_period days
+                    into :dueDate from category join borrower on category.category_name = borrower.category_name
+                    where borrower_ID = :borrowerID
+            };
+
+            #sql { 
+                insert into checked_out values (:callNumber, :copyNumber, :borrowerID, :dueDate)
+            };
+
+            #sql { commit };
+        }
+        catch(SQLException e) 
+        {   
+            if (e.getErrorCode() == DUPLICATE_KEY_SQL_ERROR)
+            {
+                throw new ErrorMessage("Book is already checked out");
+            }
+            else if (e.getSQLState().equals(EXCEEDS_MAX_BOOKS_CONSTRAINT))
+            {
+                throw new ErrorMessage("This borrower cannot check out another book because of the category they are a part of.");
+            }
+            else if (e.getSQLState().equals(CHECKED_OUT_COPY_CONSTRAINT))
+            {
+                throw new ErrorMessage("No such book");
+            }
+            else
+                throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
+        }
+        return dueDate;
     }
 
     /** Return a book.  If an overdue fine is incurred, it will be recorded
@@ -174,6 +199,11 @@ return new Date(calendar.getTime().getTime());
      */
     public void returnBook(String callNumber, short copyNumber) throws ErrorMessage
     {
+        // check if it is overdue
+        // delete checked out
+        // create a fine
+               
+
 // STUB
 if (callNumber.equals("BAD")) throw new ErrorMessage("Error message test returnBook");
 System.out.println("Return " + callNumber + " " + copyNumber);
@@ -1605,7 +1635,9 @@ stream.println("Overdue Books report");
         "~~~ YOU NEED TO FILL THIS IN ~~~";
     private static final String BORROWER_CATEGORY_FOREIGN_CONSTRAINT =
         "BORROWER_CATEGORY";
-    // sqlstate23503, -530
+    private static final String EXCEEDS_MAX_BOOKS_CONSTRAINT = "71001";
+    private static final String CHECKED_OUT_COPY_CONSTRAINT = "23503";
+
 
      private static final String CHECKED_OUT_BORROWER_FOREIGN_CONSTRAINT =
         "CHECKED_OUT_BORROWER";
