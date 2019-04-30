@@ -152,7 +152,7 @@ public class Database
                              short copyNumber) throws ErrorMessage
     {
         Date dueDate = null;
-        try 
+        try
         {
             #sql {
                 select current date + :deltaDate days + checkout_period days
@@ -160,14 +160,14 @@ public class Database
                     where borrower_ID = :borrowerID
             };
 
-            #sql { 
+            #sql {
                 insert into checked_out values (:callNumber, :copyNumber, :borrowerID, :dueDate)
             };
 
             #sql { commit };
         }
-        catch(SQLException e) 
-        {   
+        catch(SQLException e)
+        {
             if (e.getErrorCode() == DUPLICATE_KEY_SQL_ERROR)
             {
                 throw new ErrorMessage("Book is already checked out");
@@ -202,7 +202,7 @@ public class Database
         // check if it is overdue
         // delete checked out
         // create a fine
-               
+
 
 // STUB
 if (callNumber.equals("BAD")) throw new ErrorMessage("Error message test returnBook");
@@ -1474,10 +1474,51 @@ stream.println("Fines report");
      *  @exception an ErrorMessage is thrown if there is an unexpected error
      *             accessing the database.
      */
+    #sql iterator OverdueBooksReportCursor(String, String, String, Date);
+
     public void overdueBooksReport(PrintStream stream) throws ErrorMessage
     {
-// STUB
-stream.println("Overdue Books report");
+
+          try
+          {
+              OverdueBooksReportCursor cursor;
+
+              #sql cursor = { select last_name,
+                                    first_name,
+                                    title,
+                                    date_due
+                                  from Checked_Out join Borrower
+                                  on borrower.borrower_id = checked_out.borrower_id
+                                  join Book_Info on checked_out.call_number = book_info.call_number
+                                  where days(current date) + :deltaDate - days(date_due) > 0
+                                  order by last_name, first_name, date_due
+                             };
+
+              String [] OVERDUE_BOOKS_REPORT_HEADINGS =
+                  { "Last Name", "First Name", "Title", "Date Due" };
+              int [] OVERDUE_BOOKS_REPORT_COLUMN_WIDTHS =
+                  { 22, 22, 52, 10 };
+              boolean [] OVERDUE_BOOKS_REPORT_REPEAT_COLUMNS =
+                  { true, true, false, false };
+
+              produceReport(stream,
+                            "Overdue Books Report",
+                            OVERDUE_BOOKS_REPORT_HEADINGS,
+                            OVERDUE_BOOKS_REPORT_COLUMN_WIDTHS,
+                            OVERDUE_BOOKS_REPORT_REPEAT_COLUMNS,
+                            cursor.getResultSet());
+
+              cursor.close();
+
+          }
+          catch(SQLException e)
+          {
+              throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
+          }
+          finally
+          {
+              rollback();
+          }
     }
 
     /* ************************************************************************
