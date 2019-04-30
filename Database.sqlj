@@ -108,6 +108,8 @@ public class Database
      */
     public String getBorrowerName(String borrowerID) throws ErrorMessage
     {
+        String borrowerName = null;
+
         System.out.println("getBorrowerName() called");
         try
         {
@@ -116,6 +118,8 @@ public class Database
             #sql { select first_name, last_name
                     into :firstName, :lastName
                     from borrower };
+
+            borrowerName = firstName + lastName;
 
         }
         catch(SQLException e)
@@ -129,10 +133,7 @@ public class Database
         {
             rollback();
         }
-
-
-        // STUB
-        return "??? name ???";
+            return borrowerName;
     }
 
     /** Check out a book.
