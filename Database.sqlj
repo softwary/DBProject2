@@ -199,7 +199,7 @@ public class Database
     public void returnBook(String callNumber, short copyNumber) throws ErrorMessage
     {
         int daysLate = 0;
-        try 
+        try
         {
             String borrowerID = null;
             String title = null;
@@ -221,26 +221,26 @@ public class Database
             #sql {
                 delete from checked_out where call_number = :callNumber and copy_number = :copyNumber
             };
-            
+
             #sql { commit };
 
             // Case that it was overdue:
-            if (daysLate > 0) 
+            if (daysLate > 0)
             {
                 BigDecimal fineAmount = new BigDecimal(Fine.DAILY_FINE_RATE * .01 * daysLate).
                     setScale(2, BigDecimal.ROUND_HALF_UP);
-            
+
                 #sql {
                     insert into fine values (:borrowerID, :title, :dateDue, current date, :fineAmount)
                 };
 
                 #sql { commit };
-        
+
                 throw new ErrorMessage("Book is overdue " + daysLate + " days " +
                     "- a fine of $" + fineAmount + " has been assessed");
             }
         }
-        catch(SQLException e) 
+        catch(SQLException e)
         {
             rollback();
             // this book aint checked out
@@ -266,19 +266,11 @@ public class Database
      */
     public Date renewBook(String callNumber, short copyNumber) throws ErrorMessage
     {
-        // If the book is on time:
-            // the renewal period is the same as the *original* checkout period, calculated based on the *original* due date!
-                                                                                // (NOT the date on which it is renewed)
-        // If the book is overdue, 
-            // it cannot be renewed.
-                // borrower cannot do this, db should not be changed!
-
-        // return the date on which the book will be due.
 
         int daysLate = 0;
         String title = null;
         Date newDateDue = null;
-        try 
+        try
         {
 
             // Get the amount of days the person had their book out
@@ -301,24 +293,24 @@ public class Database
 
                 // Update the date_due to be the original + the checkout_period for the category of this borrower
                 #sql {
-                    update checked_out 
+                    update checked_out
                         set date_due = :newDateDue
-                            where call_number = :callNumber and copy_number = :copyNumber 
+                            where call_number = :callNumber and copy_number = :copyNumber
                 };
             }
-            
+
             #sql { commit };
 
             // Case that it was overdue:
-            if (daysLate > 0) 
+            if (daysLate > 0)
             {
                 rollback();
                 throw new ErrorMessage("Book is overdue " + daysLate +
                     " days and cannot be renewed");
             }
-            #sql { commit };
+            
         }
-        catch(SQLException e) 
+        catch(SQLException e)
         {
             rollback();
             if (e.getSQLState().equals(NO_ROW_SQL_STATE))
@@ -1547,8 +1539,6 @@ public class Database
                                 on F1.borrower_id = fineTotals.borrower_id
                                 order by total desc
                            };
-            
-            System.out.println("fines report selected");
 
             String [] FINES_REPORT_HEADINGS =
                 { "Last Name", "First Name", "Phone #", "Total Fines" };
