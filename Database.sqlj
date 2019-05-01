@@ -111,7 +111,6 @@ public class Database
         String borrowerName = null;
         try
         {
-            System.out.println("getBorrowerName called, in TRY block");
             String lastName = null, firstName = null;
             #sql { select first_name, last_name
                     into :firstName, :lastName
@@ -863,13 +862,12 @@ return new Date(calendar.getTime().getTime());
                             List phones,
                             String category) throws ErrorMessage
     {
-        System.out.println("addBorrower called before TRY");
         try
         {
             #sql { insert into borrower
                             values (:borrowerID, :lastName, :firstName, :category)
                     };
-            /*
+
             Iterator phoneIterator = phones.iterator();
             while (phoneIterator.hasNext())
             {
@@ -879,20 +877,18 @@ return new Date(calendar.getTime().getTime());
                         values (:borrowerID, :phone)
                     };
             }
-            */
-            System.out.println("addBorrower called, in TRY block");
+
             #sql { commit };
         }
         catch(SQLException e)
         {
-            System.out.println("addBorrower called, in catch block");
             rollback();
             if (e.getErrorCode() == DUPLICATE_KEY_SQL_ERROR)
             {
-                if (e.getMessage().indexOf(BORROWER_TABLE_NAME) >= 0)
-                    throw new ErrorMessage("Duplicate borrower");
-                else
+                if (e.getMessage().indexOf(BORROWER_PHONE_TABLE_NAME) >= 0)
                     throw new ErrorMessage("Duplicate phone number for this borrower");
+                else
+                    throw new ErrorMessage("Duplicate borrower");
             }
             else if (e.getMessage().indexOf(BORROWER_CATEGORY_FOREIGN_CONSTRAINT) >= 0)
                 throw new ErrorMessage("Category of borrower was not found");
@@ -900,15 +896,6 @@ return new Date(calendar.getTime().getTime());
                 throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
         }
 
-      Object [] newInformation = new Object[5];
-      newInformation[0] = borrowerID;
-      newInformation[1] = lastName;
-      newInformation[2] = firstName;
-      newInformation[3] = phones;
-      newInformation[4] = category;
-
-
-      //System.out.println("addBorrower(" + toString(newInformation) + ") called");
     }
 
     /** Get information on an existing borrower about to be edited or deleted
@@ -1032,18 +1019,11 @@ return new Date(calendar.getTime().getTime());
         rollback();
         if (e.getMessage().indexOf(BORROWER_CATEGORY_FOREIGN_CONSTRAINT) >= 0)
               throw new ErrorMessage("Category of borrower was not found");
+        else if (e.getErrorCode() == DUPLICATE_KEY_SQL_ERROR)
+          throw new ErrorMessage("Duplicate phone number");
         else
             throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
     }
-
-        Object [] information = new Object[6];
-        information[0] = borrowerID;
-        information[1] = newLastName;
-        information[2] = newFirstName;
-        information[3] = originalPhones;
-        information[4] = newPhones;
-        information[5] = newCategory;
-        System.out.println("updateBorrower(" + toString(information) + ") called");
     }
 
     /** Delete a borrower
@@ -1185,8 +1165,26 @@ return new Date(calendar.getTime().getTime());
      */
     public void payFine(String borrowerID, Fine fine) throws ErrorMessage
     {
-// STUB
-System.out.println("payFine() " + borrowerID + " " + fine.getAmountDue() + " called");
+      String[] values = fine.getValues();
+      String title = values[0];
+      Date dateDue = fine.getDateDue();
+
+      try
+        {
+            #sql { delete from Fine
+                        where borrower_id = :borrowerID and
+                              title = :title and
+                              date_due = :dateDue
+                 };
+            System.out.println("Called from inside try pay fine");
+
+            #sql { commit };
+        }
+        catch(SQLException e)
+        {
+            rollback();
+            throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
+        }
     }
 
     /* ************************************************************************
@@ -1684,7 +1682,7 @@ stream.println("Fines report");
         "CHECKED_OUT_BORROWER";
 
     private static final String BOOK_AUTHOR_TABLE_NAME = "BOOK_AUTHOR";
-    private static final String BORROWER_TABLE_NAME = "BORROWER";
+    private static final String BORROWER_PHONE_TABLE_NAME = "BORROWER_PHONE";
 
     private static final String DRIVER_NAME = "com.ibm.db2.jcc.DB2Driver";
     private static final String DATABASE_URL =
