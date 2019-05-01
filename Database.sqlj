@@ -151,7 +151,7 @@ public class Database
                              short copyNumber) throws ErrorMessage
     {
         Date dueDate = null;
-        try
+        try 
         {
             #sql {
                 select current date + :deltaDate days + checkout_period days
@@ -159,14 +159,15 @@ public class Database
                     where borrower_ID = :borrowerID
             };
 
-            #sql {
+            #sql { 
                 insert into checked_out values (:callNumber, :copyNumber, :borrowerID, :dueDate)
             };
 
             #sql { commit };
         }
-        catch(SQLException e)
-        {
+        catch(SQLException e) 
+        {   
+            rollback();
             if (e.getErrorCode() == DUPLICATE_KEY_SQL_ERROR)
             {
                 throw new ErrorMessage("Book is already checked out");
@@ -198,33 +199,59 @@ public class Database
      */
     public void returnBook(String callNumber, short copyNumber) throws ErrorMessage
     {
-        // check if it is overdue
-        // delete checked out
-        // create a fine
+        int daysLate = 0;
+        try 
+        {
+            String borrowerID = null;
+            String title = null;
+            Date dateDue = null;
 
+            // Get the amount of days the person had their book out
+            #sql {
+                select days(current date) + :deltaDate - days(date_due) into :daysLate from checked_out
+                    where call_number = :callNumber and copy_number = :copyNumber
+            };
 
-// STUB
-if (callNumber.equals("BAD")) throw new ErrorMessage("Error message test returnBook");
-System.out.println("Return " + callNumber + " " + copyNumber);
-// Days late should be calculated from the checkout record in the database -
-// this uses the copyNumber to facilitate testing - a book with a copy number
-// greater than 10 is considered late that many days.
-int daysLate = (copyNumber > 10) ? copyNumber : 0;
+            #sql {
+                select borrower_ID, title, date_due into :borrowerID, :title, :dateDue
+                from checked_out join book_info on checked_out.call_number = book_info.call_number
+                where checked_out.call_number = :callNumber and checked_out.copy_number = :copyNumber
+            };
 
-// The following line should be incorporated into your code, to be executed
-// if the book is late (after calculating daysLate in the database, of course),
-// and before inserting a new row into the Fine table.   It uses the symbolic
-// constant DAILY_FINE_RATE in class Fine - which gives the rate in cents,
-// whereas the Fine table in the database holds the amount in dollars.
+            // Delete this book from the checked_out table
+            #sql {
+                delete from checked_out where call_number = :callNumber and copy_number = :copyNumber
+            };
+            
+            #sql { commit };
 
-        BigDecimal fineAmount = new BigDecimal(Fine.DAILY_FINE_RATE * .01 * daysLate).
-            setScale(2, BigDecimal.ROUND_HALF_UP);
+            // Case that it was overdue:
+            if (daysLate > 0) 
+            {
+                BigDecimal fineAmount = new BigDecimal(Fine.DAILY_FINE_RATE * .01 * daysLate).
+                    setScale(2, BigDecimal.ROUND_HALF_UP);
+            
+                #sql {
+                    insert into fine values (:borrowerID, :title, :dateDue, current date, :fineAmount)
+                };
+        
+                throw new ErrorMessage("Book is overdue " + daysLate + " days " +
+                    "- a fine of $" + fineAmount + " has been assessed");
+            }
+            #sql { commit };
+        }
+        catch(SQLException e) 
+        {
+            rollback();
+            // this book aint checked out
 
-// Include the following at the very end of your code
-
-        if (daysLate > 0)
-            throw new ErrorMessage("Book is overdue " + daysLate + " days " +
-                "- a fine of $" + fineAmount + " has been assessed");
+            if (e.getSQLState().equals(NO_ROW_SQL_STATE))
+            {
+                throw new ErrorMessage("No such book is checked out");
+            }
+            else
+                throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
+        }
     }
 
     /** Renew a book  If there is any problem, an appropriate error
@@ -239,28 +266,69 @@ int daysLate = (copyNumber > 10) ? copyNumber : 0;
      */
     public Date renewBook(String callNumber, short copyNumber) throws ErrorMessage
     {
-// STUB
-if (callNumber.equals("BAD")) throw new ErrorMessage("Error message test renewBook");
-System.out.println("Renew " + callNumber + " " + copyNumber);
-Calendar calendar = Calendar.getInstance();
-calendar.add(Calendar.DATE, deltaDate);
-calendar.add(Calendar.DATE, 10);
-// Days late should be calculated from the checkout record in the database -
-// this uses the copyNumber to facilitate testing - a book with a copy number
-// greater than 10 is considered late that many days.
-int daysLate = (copyNumber > 10) ? copyNumber : 0;
+        // If the book is on time:
+            // the renewal period is the same as the *original* checkout period, calculated based on the *original* due date!
+                                                                                // (NOT the date on which it is renewed)
+        // If the book is overdue, 
+            // it cannot be renewed.
+                // borrower cannot do this, db should not be changed!
 
-// The following line should be incorporated into your code, to be executed
-// if the book is late (after calculating daysLate in the database, of course),
+        // return the date on which the book will be due.
 
-        if (daysLate > 0)
+        int daysLate = 0;
+        String title = null;
+        Date newDateDue = null;
+        try 
+        {
+
+            // Get the amount of days the person had their book out
+            #sql {
+                select days(current date) + :deltaDate - days(date_due) into :daysLate from checked_out
+                    where call_number = :callNumber and copy_number = :copyNumber
+            };
+
+            // Since the book is not late,
+            // Update the return date to be original due date+renewal period
+            if (daysLate <= 0)
+            {
+                // Put the newDateDue into the variable
+                #sql {
+                    select date_due + checkout_period days into :newDateDue
+                        from borrower join checked_out on checked_out.borrower_id = borrower.borrower_id join category
+                            on borrower.category_name = category.category_name
+                                 where checked_out.copy_number = :copyNumber and checked_out.call_number = :callNumber
+                };
+
+                // Update the date_due to be the original + the checkout_period for the category of this borrower
+                #sql {
+                    update checked_out 
+                        set date_due = :newDateDue
+                            where call_number = :callNumber and copy_number = :copyNumber 
+                };
+            }
+            
+            #sql { commit };
+
+            // Case that it was overdue:
+            if (daysLate > 0) 
+            {
+                rollback();
+                throw new ErrorMessage("Book is overdue " + daysLate +
+                    " days and cannot be renewed");
+            }
+            #sql { commit };
+        }
+        catch(SQLException e) 
         {
             rollback();
-            throw new ErrorMessage("Book is overdue " + daysLate +
-                " days and cannot be renewed");
+            if (e.getSQLState().equals(NO_ROW_SQL_STATE))
+            {
+                throw new ErrorMessage("No such book is checked out");
+            }
+            else
+                throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
         }
-
-return new Date(calendar.getTime().getTime());
+        return newDateDue;
     }
 
     /* ************************************************************************
@@ -867,7 +935,7 @@ return new Date(calendar.getTime().getTime());
             #sql { insert into borrower
                             values (:borrowerID, :lastName, :firstName, :category)
                     };
-
+            /*
             Iterator phoneIterator = phones.iterator();
             while (phoneIterator.hasNext())
             {
@@ -877,7 +945,7 @@ return new Date(calendar.getTime().getTime());
                         values (:borrowerID, :phone)
                     };
             }
-
+            */
             #sql { commit };
         }
         catch(SQLException e)
@@ -885,10 +953,10 @@ return new Date(calendar.getTime().getTime());
             rollback();
             if (e.getErrorCode() == DUPLICATE_KEY_SQL_ERROR)
             {
-                if (e.getMessage().indexOf(BORROWER_PHONE_TABLE_NAME) >= 0)
-                    throw new ErrorMessage("Duplicate phone number for this borrower");
-                else
+                if (e.getMessage().indexOf(BORROWER_TABLE_NAME) >= 0)
                     throw new ErrorMessage("Duplicate borrower");
+                else
+                    throw new ErrorMessage("Duplicate phone number for this borrower");
             }
             else if (e.getMessage().indexOf(BORROWER_CATEGORY_FOREIGN_CONSTRAINT) >= 0)
                 throw new ErrorMessage("Category of borrower was not found");
@@ -896,6 +964,15 @@ return new Date(calendar.getTime().getTime());
                 throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
         }
 
+      Object [] newInformation = new Object[5];
+      newInformation[0] = borrowerID;
+      newInformation[1] = lastName;
+      newInformation[2] = firstName;
+      newInformation[3] = phones;
+      newInformation[4] = category;
+
+
+      //System.out.println("addBorrower(" + toString(newInformation) + ") called");
     }
 
     /** Get information on an existing borrower about to be edited or deleted
@@ -1019,11 +1096,17 @@ return new Date(calendar.getTime().getTime());
         rollback();
         if (e.getMessage().indexOf(BORROWER_CATEGORY_FOREIGN_CONSTRAINT) >= 0)
               throw new ErrorMessage("Category of borrower was not found");
-        else if (e.getErrorCode() == DUPLICATE_KEY_SQL_ERROR)
-          throw new ErrorMessage("Duplicate phone number");
         else
             throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
     }
+
+        Object [] information = new Object[6];
+        information[0] = borrowerID;
+        information[1] = newLastName;
+        information[2] = newFirstName;
+        information[3] = originalPhones;
+        information[4] = newPhones;
+        information[5] = newCategory;
     }
 
     /** Delete a borrower
@@ -1165,26 +1248,8 @@ return new Date(calendar.getTime().getTime());
      */
     public void payFine(String borrowerID, Fine fine) throws ErrorMessage
     {
-      String[] values = fine.getValues();
-      String title = values[0];
-      Date dateDue = fine.getDateDue();
-
-      try
-        {
-            #sql { delete from Fine
-                        where borrower_id = :borrowerID and
-                              title = :title and
-                              date_due = :dateDue
-                 };
-            System.out.println("Called from inside try pay fine");
-
-            #sql { commit };
-        }
-        catch(SQLException e)
-        {
-            rollback();
-            throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
-        }
+// STUB
+System.out.println("payFine() " + borrowerID + " " + fine.getAmountDue() + " called");
     }
 
     /* ************************************************************************
@@ -1454,7 +1519,7 @@ return new Date(calendar.getTime().getTime());
      *  phone number(s), total of all fines outstanding for this borrower
      *
      *  @param stream the stream to which to print the report
-     *
+     *  
      *  @exception an ErrorMessage is thrown if there is an unexpected error
      *             accessing the database.
      */
@@ -1472,51 +1537,10 @@ stream.println("Fines report");
      *  @exception an ErrorMessage is thrown if there is an unexpected error
      *             accessing the database.
      */
-    #sql iterator OverdueBooksReportCursor(String, String, String, Date);
-
     public void overdueBooksReport(PrintStream stream) throws ErrorMessage
     {
-
-          try
-          {
-              OverdueBooksReportCursor cursor;
-
-              #sql cursor = { select last_name,
-                                    first_name,
-                                    title,
-                                    date_due
-                                  from Checked_Out join Borrower
-                                  on borrower.borrower_id = checked_out.borrower_id
-                                  join Book_Info on checked_out.call_number = book_info.call_number
-                                  where days(current date) + :deltaDate - days(date_due) > 0
-                                  order by last_name, first_name, date_due
-                             };
-
-              String [] OVERDUE_BOOKS_REPORT_HEADINGS =
-                  { "Last Name", "First Name", "Title", "Date Due" };
-              int [] OVERDUE_BOOKS_REPORT_COLUMN_WIDTHS =
-                  { 22, 22, 52, 10 };
-              boolean [] OVERDUE_BOOKS_REPORT_REPEAT_COLUMNS =
-                  { true, true, false, false };
-
-              produceReport(stream,
-                            "Overdue Books Report",
-                            OVERDUE_BOOKS_REPORT_HEADINGS,
-                            OVERDUE_BOOKS_REPORT_COLUMN_WIDTHS,
-                            OVERDUE_BOOKS_REPORT_REPEAT_COLUMNS,
-                            cursor.getResultSet());
-
-              cursor.close();
-
-          }
-          catch(SQLException e)
-          {
-              throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
-          }
-          finally
-          {
-              rollback();
-          }
+// STUB
+stream.println("Overdue Books report");
     }
 
     /* ************************************************************************
@@ -1682,7 +1706,7 @@ stream.println("Fines report");
         "CHECKED_OUT_BORROWER";
 
     private static final String BOOK_AUTHOR_TABLE_NAME = "BOOK_AUTHOR";
-    private static final String BORROWER_PHONE_TABLE_NAME = "BORROWER_PHONE";
+    private static final String BORROWER_TABLE_NAME = "BORROWER";
 
     private static final String DRIVER_NAME = "com.ibm.db2.jcc.DB2Driver";
     private static final String DATABASE_URL =
