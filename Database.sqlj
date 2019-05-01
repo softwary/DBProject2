@@ -198,33 +198,60 @@ public class Database
      */
     public void returnBook(String callNumber, short copyNumber) throws ErrorMessage
     {
-        // check if it is overdue
-        // delete checked out
-        // create a fine
+        int daysLate = 0;
+        try 
+        {
+            String borrowerID = null;
+            String title = null;
+            Date dateDue = null;
 
+            // Get the amount of days the person had their book out
+            #sql {
+                select days(current date) + :deltaDate - days(date_due) into :daysLate from checked_out
+                    where call_number = :callNumber and copy_number = :copyNumber
+            };
 
-// STUB
-if (callNumber.equals("BAD")) throw new ErrorMessage("Error message test returnBook");
-System.out.println("Return " + callNumber + " " + copyNumber);
-// Days late should be calculated from the checkout record in the database -
-// this uses the copyNumber to facilitate testing - a book with a copy number
-// greater than 10 is considered late that many days.
-int daysLate = (copyNumber > 10) ? copyNumber : 0;
+            #sql {
+                select borrower_ID, title, date_due into :borrowerID, :title, :dateDue
+                from checked_out join book_info on checked_out.call_number = book_info.call_number
+                where checked_out.call_number = :callNumber and checked_out.copy_number = :copyNumber
+            };
 
-// The following line should be incorporated into your code, to be executed
-// if the book is late (after calculating daysLate in the database, of course),
-// and before inserting a new row into the Fine table.   It uses the symbolic
-// constant DAILY_FINE_RATE in class Fine - which gives the rate in cents,
-// whereas the Fine table in the database holds the amount in dollars.
+            // Delete this book from the checked_out table
+            #sql {
+                delete from checked_out where call_number = :callNumber and copy_number = :copyNumber
+            };
+            
+            #sql { commit };
 
-        BigDecimal fineAmount = new BigDecimal(Fine.DAILY_FINE_RATE * .01 * daysLate).
-            setScale(2, BigDecimal.ROUND_HALF_UP);
+            // Case that it was overdue:
+            if (daysLate > 0) 
+            {
+                BigDecimal fineAmount = new BigDecimal(Fine.DAILY_FINE_RATE * .01 * daysLate).
+                    setScale(2, BigDecimal.ROUND_HALF_UP);
+            
+                #sql {
+                    insert into fine values (:borrowerID, :title, :dateDue, current date, :fineAmount)
+                };
 
-// Include the following at the very end of your code
+                #sql { commit };
+        
+                throw new ErrorMessage("Book is overdue " + daysLate + " days " +
+                    "- a fine of $" + fineAmount + " has been assessed");
+            }
+        }
+        catch(SQLException e) 
+        {
+            rollback();
+            // this book aint checked out
 
-        if (daysLate > 0)
-            throw new ErrorMessage("Book is overdue " + daysLate + " days " +
-                "- a fine of $" + fineAmount + " has been assessed");
+            if (e.getSQLState().equals(NO_ROW_SQL_STATE))
+            {
+                throw new ErrorMessage("No such book is checked out");
+            }
+            else
+                throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
+        }
     }
 
     /** Renew a book  If there is any problem, an appropriate error
@@ -239,28 +266,69 @@ int daysLate = (copyNumber > 10) ? copyNumber : 0;
      */
     public Date renewBook(String callNumber, short copyNumber) throws ErrorMessage
     {
-// STUB
-if (callNumber.equals("BAD")) throw new ErrorMessage("Error message test renewBook");
-System.out.println("Renew " + callNumber + " " + copyNumber);
-Calendar calendar = Calendar.getInstance();
-calendar.add(Calendar.DATE, deltaDate);
-calendar.add(Calendar.DATE, 10);
-// Days late should be calculated from the checkout record in the database -
-// this uses the copyNumber to facilitate testing - a book with a copy number
-// greater than 10 is considered late that many days.
-int daysLate = (copyNumber > 10) ? copyNumber : 0;
+        // If the book is on time:
+            // the renewal period is the same as the *original* checkout period, calculated based on the *original* due date!
+                                                                                // (NOT the date on which it is renewed)
+        // If the book is overdue, 
+            // it cannot be renewed.
+                // borrower cannot do this, db should not be changed!
 
-// The following line should be incorporated into your code, to be executed
-// if the book is late (after calculating daysLate in the database, of course),
+        // return the date on which the book will be due.
 
-        if (daysLate > 0)
+        int daysLate = 0;
+        String title = null;
+        Date newDateDue = null;
+        try 
+        {
+
+            // Get the amount of days the person had their book out
+            #sql {
+                select days(current date) + :deltaDate - days(date_due) into :daysLate from checked_out
+                    where call_number = :callNumber and copy_number = :copyNumber
+            };
+
+            // Since the book is not late,
+            // Update the return date to be original due date+renewal period
+            if (daysLate <= 0)
+            {
+                // Put the newDateDue into the variable
+                #sql {
+                    select date_due + checkout_period days into :newDateDue
+                        from borrower join checked_out on checked_out.borrower_id = borrower.borrower_id join category
+                            on borrower.category_name = category.category_name
+                                 where checked_out.copy_number = :copyNumber and checked_out.call_number = :callNumber
+                };
+
+                // Update the date_due to be the original + the checkout_period for the category of this borrower
+                #sql {
+                    update checked_out 
+                        set date_due = :newDateDue
+                            where call_number = :callNumber and copy_number = :copyNumber 
+                };
+            }
+            
+            #sql { commit };
+
+            // Case that it was overdue:
+            if (daysLate > 0) 
+            {
+                rollback();
+                throw new ErrorMessage("Book is overdue " + daysLate +
+                    " days and cannot be renewed");
+            }
+            #sql { commit };
+        }
+        catch(SQLException e) 
         {
             rollback();
-            throw new ErrorMessage("Book is overdue " + daysLate +
-                " days and cannot be renewed");
+            if (e.getSQLState().equals(NO_ROW_SQL_STATE))
+            {
+                throw new ErrorMessage("No such book is checked out");
+            }
+            else
+                throw new ErrorMessage("Unexpected SQL error " + e.getMessage());
         }
-
-return new Date(calendar.getTime().getTime());
+        return newDateDue;
     }
 
     /* ************************************************************************
@@ -1176,7 +1244,6 @@ return new Date(calendar.getTime().getTime());
                               title = :title and
                               date_due = :dateDue
                  };
-            System.out.println("Called from inside try pay fine");
 
             #sql { commit };
         }
@@ -1458,7 +1525,7 @@ return new Date(calendar.getTime().getTime());
      *  @exception an ErrorMessage is thrown if there is an unexpected error
      *             accessing the database.
      */
-     #sql iterator FinesReportCursor(int, String, String, String, String);
+     #sql iterator FinesReportCursor(String, String, String, Double);
 
      public void finesReport(PrintStream stream) throws ErrorMessage
      {
@@ -1469,18 +1536,26 @@ return new Date(calendar.getTime().getTime());
             #sql cursor = { select last_name,
                                    first_name,
                                    phone,
-                                   sum(amountDue)
-                                from Fine join Borrower on Fine.borrower_id = Borrower.borrower_ID
-                                join Borrower_phone on Fine.borrower_id = Borrower_phone.borrower_id
-                                order by
+                                   fineTotals.total
+                                from Fine as F1 join Borrower on F1.borrower_id = Borrower.borrower_id
+                                left join Borrower_phone on F1.borrower_id = Borrower_phone.borrower_id
+                                join table
+                                    (select sum(amount) as total, Borrower.borrower_id
+                                    from fine F2
+                                    where F2.borrower_id = Borrower.borrower_id)
+                                    as fineTotals
+                                on F1.borrower_id = fineTotals.borrower_id
+                                order by total desc
                            };
+            
+            System.out.println("fines report selected");
 
             String [] FINES_REPORT_HEADINGS =
                 { "Last Name", "First Name", "Phone #", "Total Fines" };
             int [] FINES_REPORT_COLUMN_WIDTHS =
-                { 22, 22, 22, 12, 22 };
+                { 22, 22, 22, 12 };
             boolean [] FINES_REPORT_REPEAT_COLUMNS =
-                { true, true, true, false, true };
+                { true, true, false, true };
 
             produceReport(stream,
                           "Fines Report",
